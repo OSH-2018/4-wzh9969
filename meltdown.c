@@ -104,7 +104,7 @@ int set_signal(void)
 
 	return sigaction(SIGSEGV, &act, NULL);
 }
-/*设置缓存时间阀值*/
+/*设置缓存时间阀值，参考github项目*/
 void set_cached_threshold(void)
 {
 	long cached, uncached;
