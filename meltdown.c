@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <signal.h>
 #include <string.h>
@@ -47,12 +48,12 @@ void check(void)
 	unsigned long addr;
 	for (i = 0; i < ARRAY_SIZE; i++)
 	{
-		addr = &(target_array[i * PAGE_SIZE]);
+		addr = (unsigned long)(target_array+i * PAGE_SIZE);
 		time1 = __rdtscp(&zero);
 		__asm__ __volatile__(
 			"movl (%0), %%eax\n\t"
 			:
-		: "m"(addr)
+		: "r"(addr)
 			: "ax"
 			);
 		time2 = __rdtscp(&zero);
@@ -109,9 +110,9 @@ int main(int argc, char *argv[])
 {
 	int i, ret;
 	unsigned long addr;
-	size_t size;
-	sscanf(argv[0], "%lx", &addr);
-	sscanf(argv[1], "%dx", &size);
+	int size=10;
+	sscanf(argv[1], "%lx", &addr);
+	sscanf(argv[2], "%dx", &size);
 	memset(target_array, 1, sizeof(target_array));
 	for (i = 0; i < size; i++)
 	{
