@@ -26,9 +26,9 @@ flush清空target数组，使所有页全部移出缓存，speculate对目标地
 ## 预期结果
 攻击具有随机性，不能保证100%正确，但是成功率很高，可以通过多次重复攻击来交叉检验和确定实际数据。
 读取50个数据，结果如图。  
-![result](./1.png)
+![result](./1.png)  
 打开MOREINFO。  
-![result](./2.png)
+![result](./2.png)  
 
 ## 参考资料
 * [meltdown论文](https://meltdownattack.com/meltdown.pdf)
