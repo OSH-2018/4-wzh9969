@@ -32,11 +32,15 @@ check();
 * 对同一个地址进行1000次试探，取得到最多次的数据作为一个结果；取5个结果中出现最多的字符进行输出和记录。
 ## 预期结果
 攻击具有随机性，不能保证100%正确，但是成功率很高，可以通过多次重复攻击来交叉检验和确定实际数据。
-实验环境为Ubuntu 14.04.5 LTS，内核版本4.4.0-31-generic。
+实验环境为Ubuntu 14.04.5 LTS，内核版本4.4.0-31-generic。  
+直接`make`后运行`./run.sh`即可，第一次使用需要root权限获取地址。
 读取50个数据，结果如图。  
 ![result](./1.png)  
 打开MOREINFO。  
 ![result](./2.png)  
+当然也可以读取更多数据
+![result](./3.png)
+可以看到完整读出了`/proc/version`中关于版本的内容。  
 
 ## 参考资料
 * [meltdown论文](https://meltdownattack.com/meltdown.pdf)

