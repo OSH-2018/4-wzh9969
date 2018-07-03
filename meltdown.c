@@ -137,7 +137,7 @@ int main(int argc, char *argv[])
 	for (i = 0; i < size; i++)
 	{
 		memset(attemp, 0, sizeof(attemp));
-		max = 0; max_i = 0; 
+		max = -1; max_i = 0; 
 		for (j = 0; j<ATTEMP; j++)
 		{
 			ret = attackonebyte(fd, addr);
@@ -146,7 +146,7 @@ int main(int argc, char *argv[])
 #endif
 			attemp[ret]++;
 		}
-		for (j = 0; j < ARRAY_SIZE; j++)
+		for (j = 1; j < ARRAY_SIZE; j++)
 		{
 			if (attemp[j]&&attemp[j] > max)
 			{
@@ -157,6 +157,8 @@ int main(int argc, char *argv[])
 		ret = max_i;
 		printf("read:%lx data=%2x %c", addr, ret, isprint(ret) ? ret : ' ');
 #if MOREINFO
+		if(max==-1)
+		max=ATTEMP;
 		printf("  %din%d", max, ATTEMP);
 #endif
 		printf("\n");
